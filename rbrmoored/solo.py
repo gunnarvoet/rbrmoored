@@ -17,7 +17,12 @@ import gvpy as gv
 
 
 def proc(
-    solofile, data_out=None, figure_out=None, cal_time=None, show_plot=True
+    solofile,
+    data_out=None,
+    figure_out=None,
+    cal_time=None,
+    show_plot=True,
+    apply_time_offset=True,
 ):
     """
     Combining RBR Solo processing steps.
@@ -26,13 +31,16 @@ def proc(
     ----------
     solofile : path object
         Path to solo file
-    data_out : path object
-        Path to data output directory
-    figure_out : path object
-        Path to figure output directory
-    cal_time : np.datetime64 object
-        Time of post-deployment clock calibration
-
+    data_out : path object, optional
+        Path to data output directory.
+    figure_out : path object, optional
+        Path to figure output directory.
+    cal_time : np.datetime64 object, optional
+        Time of post-deployment clock calibration.
+    show_plot : bool, optional
+        Plot and save time series. Default True.
+    apply_time_offset : bool, optional
+        Apply time offset if True.
     Returns
     -------
     solo : xarray.DataArray
@@ -60,12 +68,19 @@ def proc(
         solo = read(solofile)
         savenc = False
     # apply time drift
-    if solo.attrs["time drift in ms"] == 0:
-        print("no time offset applied!")
-    elif np.absolute(solo.attrs["time drift in ms"]) > 3.6e6:
-        print("time offset more than one hour, not applied")
+    if apply_time_offset:
+        if solo.attrs["time drift in ms"] == 0:
+            print("no time offset applied!")
+        elif np.absolute(solo.attrs["time drift in ms"]) > 3.6e6:
+            print("time offset more than one hour, not applied")
+        else:
+            solo = time_offset(solo)
     else:
-        solo = time_offset(solo)
+        print("no time offset applied!")
+    # make sure the file name in the meta data matches the raw file name
+    # if not, derive from raw file name
+    if Path(solo.attrs["file"]).stem != Path(filename).stem:
+        solo.attrs["file"] = "{:s}.rsk".format(Path(filename).stem)
     # save to netcdf
     if savenc:
         save_nc(solo, data_out)
@@ -213,7 +228,7 @@ def plot(solo, figure_out=None, cal_time=None):
                 0.9,
                 "WARNING: time offset unknown",
                 transform=ax0.transAxes,
-                color='red',
+                color="red",
                 backgroundcolor="w",
             )
         elif np.absolute(solo.attrs["time drift in ms"]) > 3.6e6:
@@ -222,7 +237,7 @@ def plot(solo, figure_out=None, cal_time=None):
                 0.9,
                 "WARNING: time offset more than one hour, not applied",
                 transform=ax0.transAxes,
-                color='red',
+                color="red",
                 backgroundcolor="w",
             )
         else:
