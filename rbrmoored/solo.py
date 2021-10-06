@@ -24,23 +24,30 @@ def proc(
     show_plot=True,
     apply_time_offset=True,
 ):
-    """
-    Combining RBR Solo processing steps.
+    """Combine RBR Solo processing steps.
+
+    The following processing steps are combined here:
+    - Read data in .rsk format
+    - Apply time offset
+    - Save to netcdf
+    - Plot
 
     Parameters
     ----------
     solofile : path object
         Path to solo file
     data_out : path object, optional
-        Path to data output directory.
+        Path to data output directory. Processed data will only be saved to
+        netcdf format if `data_out` is provided. Default None.
     figure_out : path object, optional
-        Path to figure output directory.
+        Path to figure output directory. Default None.
     cal_time : np.datetime64 object, optional
-        Time of post-deployment clock calibration.
+        Time of post-deployment clock calibration. Default None.
     show_plot : bool, optional
         Plot and save time series. Default True.
     apply_time_offset : bool, optional
-        Apply time offset if True.
+        Apply time offset. Default True.
+
     Returns
     -------
     solo : xarray.DataArray
@@ -58,6 +65,9 @@ def proc(
                 )
             )
             solo = xr.open_dataarray(savepath)
+            # Update time file stamp. This way, make still recognizes that
+            # the file has been worked on.
+            savepath.touch()
             savenc = False
         else:
             print("reading raw rsk file")
@@ -94,12 +104,25 @@ def proc(
 def read_rsk(solofile):
     rsk = pyrsktools.open(solofile)
     print("reading SN {:d}".format(rsk.instrument.serial))
-    # read data
+    # read all data
     data = rsk.npsamples()
     return rsk, data
 
 
 def read(solofile):
+    """Read RBR Solo data in .rsk format and output as netcdf
+
+    Parameters
+    ----------
+    solofile : path object
+        Path to solo file
+
+    Returns
+    -------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    """
+
     # read data
     rsk, data = read_rsk(solofile)
     solo_t = data["temperature_00"]
@@ -140,7 +163,7 @@ def read(solofile):
     )
     solo.attrs["sampling period"] = sampling_period
     # solo.attrs["path"] = os.path.dirname(solofile)
-    solo.attrs["time offset applied"] = 0
+    solo.attrs["time offset applied"] = False
 
     rsk.close()
 
@@ -148,6 +171,23 @@ def read(solofile):
 
 
 def time_offset(solo):
+    """Apply time offset to time series.
+
+    Reads the time drift parameter from the dataset and applies it to the time
+    vector. Adds the attribute 'time offset applied' to the dataset and sets it
+    to True. Will not re-apply the time offset if 'time offset applied' is True.
+
+    Parameters
+    ----------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+
+    Returns
+    -------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    """
+
     if solo.attrs["time offset applied"]:
         print("time offset has already been applied")
     else:
@@ -169,13 +209,21 @@ def time_offset(solo):
         ]
         new_time = solo.time - time_offset
         solo["time"] = new_time
-        solo.attrs["time offset applied"] = 1
+        solo.attrs["time offset applied"] = True
 
     return solo
 
 
 def save_nc(solo, data_out):
-    # save dataset
+    """Save RBR Solo data in netcdf format.
+
+    Parameters
+    ----------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    data_out : path object, optional
+        Path to data output directory.
+    """
     filename = "{:s}.nc".format(solo.attrs["file"][:-4])
     savepath = data_out.joinpath(filename)
     print("Saving to {}".format(savepath))
@@ -211,7 +259,7 @@ def plot(solo, figure_out=None, cal_time=None):
     else:
         solo.plot(ax=ax0)
     # plot a warning if time offset not applied
-    if solo.attrs["time offset applied"] == 1:
+    if solo.attrs["time offset applied"]:
         ax0.text(
             0.05,
             0.9,
@@ -222,7 +270,7 @@ def plot(solo, figure_out=None, cal_time=None):
             backgroundcolor="w",
         )
     else:
-        if solo.attrs["time drift in ms"] == 0:
+        if not solo.attrs["time drift in ms"]:
             ax0.text(
                 0.05,
                 0.9,
