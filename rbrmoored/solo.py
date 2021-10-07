@@ -71,8 +71,10 @@ def proc(
             # savepath.touch()
             savenc = False
             # For backwards compatibility, change name of sampling period attr
-            if 'sampling period' in solo.attrs:
-                solo.attrs['sampling period in s'] = solo.attrs['sampling period']
+            if "sampling period" in solo.attrs:
+                solo.attrs["sampling period in s"] = solo.attrs[
+                    "sampling period"
+                ]
             else:
                 pass
         else:
