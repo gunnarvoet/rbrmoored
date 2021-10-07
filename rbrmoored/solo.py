@@ -19,10 +19,10 @@ import gvpy as gv
 def proc(
     solofile,
     data_out=None,
-    figure_out=None,
-    cal_time=None,
-    show_plot=True,
     apply_time_offset=True,
+    figure_out=None,
+    show_plot=True,
+    cal_time=None,
 ):
     """Combine RBR Solo processing steps.
 
@@ -39,14 +39,15 @@ def proc(
     data_out : path object, optional
         Path to data output directory. Processed data will only be saved to
         netcdf format if `data_out` is provided. Default None.
-    figure_out : path object, optional
-        Path to figure output directory. Default None.
-    cal_time : np.datetime64 object, optional
-        Time of post-deployment clock calibration. Default None.
-    show_plot : bool, optional
-        Plot and save time series. Default True.
     apply_time_offset : bool, optional
         Apply time offset. Default True.
+    figure_out : path object, optional
+        Path to figure output directory. Default None.
+    show_plot : bool, optional
+        Plot and save time series. Default True.
+    cal_time : np.datetime64 object, optional
+        Time of post-deployment clock calibration. Used for plotting. Default
+        None.
 
     Returns
     -------
@@ -140,7 +141,8 @@ def read(solofile):
         .median()
         .data.astype("timedelta64[ns]")
         .astype(int)
-        / 1e9
+        / 1e9,
+        decimals=1,
     )
     # write meta data to attributes
     solo.attrs["units"] = rsk.channels["temperature_00"].units
@@ -148,7 +150,8 @@ def read(solofile):
     solo.attrs["SN"] = rsk.instrument.serial
     solo.attrs["model"] = rsk.instrument.model
     solo.attrs["firmware version"] = rsk.instrument.firmware_version
-    solo.attrs["file"] = rsk.deployment.name
+    file = Path(rsk.deployment.name)
+    solo.attrs["file"] = file.name
     solo.attrs["time drift in ms"] = rsk.deployment.logger_time_drift
     download_time = np.datetime64(
         rsk.deployment.download_time.replace(tzinfo=None), "ns"
@@ -161,9 +164,9 @@ def read(solofile):
     solo.attrs["sample size"] = (
         sample_size if sample_size is not None else "N/A"
     )
-    solo.attrs["sampling period"] = sampling_period
+    solo.attrs["sampling period in s"] = sampling_period
     # solo.attrs["path"] = os.path.dirname(solofile)
-    solo.attrs["time offset applied"] = False
+    solo.attrs["time offset applied"] = 0
 
     rsk.close()
 
@@ -175,7 +178,7 @@ def time_offset(solo):
 
     Reads the time drift parameter from the dataset and applies it to the time
     vector. Adds the attribute 'time offset applied' to the dataset and sets it
-    to True. Will not re-apply the time offset if 'time offset applied' is True.
+    to 1. Will not re-apply the time offset if 'time offset applied' is 1.
 
     Parameters
     ----------
@@ -209,7 +212,7 @@ def time_offset(solo):
         ]
         new_time = solo.time - time_offset
         solo["time"] = new_time
-        solo.attrs["time offset applied"] = True
+        solo.attrs["time offset applied"] = 1
 
     return solo
 
@@ -259,7 +262,7 @@ def plot(solo, figure_out=None, cal_time=None):
     else:
         solo.plot(ax=ax0)
     # plot a warning if time offset not applied
-    if solo.attrs["time offset applied"]:
+    if solo.attrs["time offset applied"] == 1:
         ax0.text(
             0.05,
             0.9,
@@ -270,7 +273,7 @@ def plot(solo, figure_out=None, cal_time=None):
             backgroundcolor="w",
         )
     else:
-        if not solo.attrs["time drift in ms"]:
+        if solo.attrs["time drift in ms"] == 0:
             ax0.text(
                 0.05,
                 0.9,
