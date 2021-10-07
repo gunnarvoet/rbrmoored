@@ -68,8 +68,13 @@ def proc(
             solo = xr.open_dataarray(savepath)
             # Update time file stamp. This way, make still recognizes that
             # the file has been worked on.
-            savepath.touch()
+            # savepath.touch()
             savenc = False
+            # For backwards compatibility, change name of sampling period attr
+            if 'sampling period' in solo.attrs:
+                solo.attrs['sampling period in s'] = solo.attrs['sampling period']
+            else:
+                pass
         else:
             print("reading raw rsk file")
             solo = read(solofile)
@@ -234,22 +239,75 @@ def save_nc(solo, data_out):
 
 
 def plot(solo, figure_out=None, cal_time=None):
+    """Save RBR Solo data in netcdf format.
 
-    # check if cal_time is past end of time series
+    Parameters
+    ----------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    figure_out : path object, optional
+        Path to figure output directory. Default None.
+    cal_time : np.datetime64 or tuple
+        Clock calibration(s) from warm water dip, either a single np.datetime64
+        time or a tuple of two time stamps with pre- and post-deployment clock
+        calibration.
+    """
+    # Generate a list of one or two time stamps and check format of time
+    # stamp(s) provided.
+    def time_ok(time):
+        return True if type(time) == np.datetime64 else False
+
     if cal_time is not None:
-        if solo.time[-1] < cal_time:
-            show_cal = False
-            print("clock cal time is past end of time series, not plotting")
+        if time_ok(cal_time):
+            cal = [cal_time]
+        elif type(cal_time) == tuple:
+            if time_ok(cal_time[0]) and time_ok(cal_time[1]):
+                cal = [cal_time[0], cal_time[1]]
         else:
-            show_cal = True
-    else:
+            raise TypeError(
+                "Provide cal time(s) as single np.datetime64 or tuple thereof"
+            )
+
+    # Check if calibration time(s) are outside the time series.
+    if cal_time is not None:
+        for time in cal:
+            if solo.time[-1] < time:
+                show_cal = False
+                print(
+                    f"clock cal time {time} is past end of time series, not plotting"
+                )
+            if solo.time[0] > time:
+                show_cal = False
+                print(
+                    f"clock cal time {time} is before start of time series, not plotting"
+                )
+            else:
+                show_cal = True
+
+    # Register how many cals to show
+    if cal_time is None:
+        ncal = 0
         show_cal = False
+    else:
+        ncal = len(cal)
+        show_cal = True
 
     # set up figure
     if show_cal:
-        fig, [ax0, ax1] = plt.subplots(
-            nrows=2, ncols=1, figsize=(10, 7), constrained_layout=True
-        )
+        if ncal == 1:
+            fig, [ax0, [axcal]] = plt.subplots(
+                nrows=2, ncols=1, figsize=(10, 7), constrained_layout=True
+            )
+        elif ncal == 2:
+            fig = plt.figure(
+                constrained_layout=True,
+                figsize=(10, 7),
+            )
+            gs = fig.add_gridspec(2, 2)
+            ax0 = fig.add_subplot(gs[0, :])
+            ax1 = fig.add_subplot(gs[1, 0])
+            ax2 = fig.add_subplot(gs[1, 1])
+            axcal = [ax1, ax2]
     else:
         fig, ax0 = plt.subplots(
             nrows=1, ncols=1, figsize=(10, 4), constrained_layout=True
@@ -257,10 +315,11 @@ def plot(solo, figure_out=None, cal_time=None):
 
     # plot time series. coarsen if it is too long to slow things down
     if len(solo) > 1e5:
-        coarsen_by = int(np.floor(60 / solo.attrs["sampling period"]))
+        coarsen_by = int(np.floor(60 / solo.attrs["sampling period in s"]))
         solo.coarsen(time=coarsen_by, boundary="trim").mean().plot(ax=ax0)
     else:
         solo.plot(ax=ax0)
+
     # plot a warning if time offset not applied
     if solo.attrs["time offset applied"] == 1:
         ax0.text(
@@ -307,45 +366,49 @@ def plot(solo, figure_out=None, cal_time=None):
 
     # plot calibration
     if show_cal:
-        tmp = solo.sel(
-            time=slice(
-                cal_time - np.timedelta64(60, "s"),
-                cal_time + np.timedelta64(60, "s"),
+        for cal_time, axi in zip(cal, axcal):
+            tmp = solo.sel(
+                time=slice(
+                    cal_time - np.timedelta64(60, "s"),
+                    cal_time + np.timedelta64(60, "s"),
+                )
             )
-        )
-        if len(tmp) > 0:
-            tmp.plot(ax=ax1, marker=".")
-            ylims = np.array(
-                [np.floor(tmp.min().data), np.ceil(tmp.max().data)]
+            if len(tmp) > 0:
+                tmp.plot(ax=axi, marker=".")
+                ylims = np.array(
+                    [np.floor(tmp.min().data), np.ceil(tmp.max().data)]
+                )
+            else:
+                ylims = np.array([1, 9])
+            axi.plot(
+                np.tile(cal_time, 2),
+                ylims + np.array([1, -1]),
+                linestyle="-",
+                color="darkorchid",
+                linewidth=1.5,
             )
-        else:
-            ylims = np.array([1, 9])
-        ax1.plot(
-            np.tile(cal_time, 2),
-            ylims + np.array([1, -1]),
-            linestyle="-",
-            color="darkorchid",
-            linewidth=1.5,
-        )
-        ax1.annotate(
-            "time calibration",
-            (cal_time, ylims[0] + 0.5),
-            xytext=(8, 8),
-            textcoords="offset points",
-            color="darkorchid",
-            ha="left",
-            backgroundcolor="w",
-        )
-        ax1.set(
-            xlim=[
-                cal_time - np.timedelta64(60, "s"),
-                cal_time + np.timedelta64(60, "s"),
-            ],
-            ylim=ylims,
-            xlabel="",
-        )
-        ax1.grid()
-        gv.plot.concise_date(ax1)
+            axi.annotate(
+                "time calibration",
+                (cal_time, ylims[0] + 0.5),
+                xytext=(16, 8),
+                textcoords="offset points",
+                color="darkorchid",
+                ha="left",
+                backgroundcolor="w",
+            )
+            axi.set(
+                xlim=[
+                    cal_time - np.timedelta64(20, "s"),
+                    cal_time + np.timedelta64(20, "s"),
+                ],
+                ylim=ylims,
+                xlabel="",
+            )
+            axi.grid()
+            gv.plot.concise_date(axi)
+        if ncal == 2:
+            axcal[-1].set(ylabel='')
+            # ax1.get_shared_y_axes().join(ax1, ax2)
 
     if figure_out is not None or False:
         figurename = "{:s}.png".format(solo.attrs["file"][:-4])
