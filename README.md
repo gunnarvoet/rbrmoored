@@ -11,7 +11,9 @@ Features
 
 * RBR Solo processing including conversion to netcdf
 
-* Comparison against post-recovery clock calibration (warm water dip)
+* Apply time offset
+
+* Compare against pre- and post-recovery clock calibration (warm water dip)
 
 
 Examples
