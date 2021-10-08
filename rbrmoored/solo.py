@@ -23,6 +23,7 @@ def proc(
     figure_out=None,
     show_plot=True,
     cal_time=None,
+    max_time_drift=4.0,
 ):
     """Combine RBR Solo processing steps.
 
@@ -48,6 +49,8 @@ def proc(
     cal_time : np.datetime64 object, optional
         Time of post-deployment clock calibration. Used for plotting. Default
         None.
+    max_time_drift : float, optional
+        Maximum time drift to apply [hours]. Default 4.
 
     Returns
     -------
@@ -89,8 +92,10 @@ def proc(
     if apply_time_offset:
         if solo.attrs["time drift in ms"] == 0:
             print("no time offset applied!")
-        elif np.absolute(solo.attrs["time drift in ms"]) > 3.6e6:
-            print("time offset more than one hour, not applied")
+        elif (
+            np.absolute(solo.attrs["time drift in ms"]) > max_time_drift * 3.6e6
+        ):
+            print(f"time offset more than {max_time_drift} hours, not applied")
         else:
             solo = time_offset(solo)
     else:
@@ -409,7 +414,7 @@ def plot(solo, figure_out=None, cal_time=None):
             axi.grid()
             gv.plot.concise_date(axi)
         if ncal == 2:
-            axcal[-1].set(ylabel='')
+            axcal[-1].set(ylabel="")
             # ax1.get_shared_y_axes().join(ax1, ax2)
 
     if figure_out is not None or False:
