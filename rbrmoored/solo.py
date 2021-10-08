@@ -279,19 +279,11 @@ def plot(solo, figure_out=None, cal_time=None):
     if cal_time is not None:
         for time in cal:
             if solo.time[-1] < time:
-                show_cal = False
-                print(
-                    f"clock cal time {time} is past end of time series, not plotting"
-                )
+                print(f"clock cal time {time} is past end of time series")
             if solo.time[0] > time:
-                show_cal = False
-                print(
-                    f"clock cal time {time} is before start of time series, not plotting"
-                )
-            else:
-                show_cal = True
+                print(f"clock cal time {time} is before start of time series")
 
-    # Register how many cals to show
+    # Register how many cals to show.
     if cal_time is None:
         ncal = 0
         show_cal = False
@@ -299,7 +291,7 @@ def plot(solo, figure_out=None, cal_time=None):
         ncal = len(cal)
         show_cal = True
 
-    # set up figure
+    # Set up figure.
     if show_cal:
         if ncal == 1:
             fig, [ax0, [axcal]] = plt.subplots(
@@ -320,14 +312,14 @@ def plot(solo, figure_out=None, cal_time=None):
             nrows=1, ncols=1, figsize=(10, 4), constrained_layout=True
         )
 
-    # plot time series. coarsen if it is too long to slow things down
+    # Plot time series. Coarsen if it is too long to slow things down.
     if len(solo) > 1e5:
         coarsen_by = int(np.floor(60 / solo.attrs["sampling period in s"]))
         solo.coarsen(time=coarsen_by, boundary="trim").mean().plot(ax=ax0)
     else:
         solo.plot(ax=ax0)
 
-    # plot a warning if time offset not applied
+    # Plot a warning if time offset not applied.
     if solo.attrs["time offset applied"] == 1:
         ax0.text(
             0.05,
@@ -371,7 +363,7 @@ def plot(solo, figure_out=None, cal_time=None):
     ax0.set(xlabel="")
     gv.plot.concise_date(ax0)
 
-    # plot calibration
+    # Plot calibration.
     if show_cal:
         for cal_time, axi in zip(cal, axcal):
             tmp = solo.sel(
@@ -415,7 +407,6 @@ def plot(solo, figure_out=None, cal_time=None):
             gv.plot.concise_date(axi)
         if ncal == 2:
             axcal[-1].set(ylabel="")
-            # ax1.get_shared_y_axes().join(ax1, ax2)
 
     if figure_out is not None or False:
         figurename = "{:s}.png".format(solo.attrs["file"][:-4])
