@@ -1,24 +1,21 @@
 rbrmoored
 =========
 
-Data processing for moored RBR sensors. 
+Data processing for moored RBR sensors.
+Currently the package only processes temperature channels as it is geared to processing data from RBRs Solo thermistors.
+The package wraps RBRs [pyrsktools](https://docs.rbr-global.com/pyrsktools/index.html).
 
 * Free software: MIT license
 
-
 Features
 --------
-
-* RBR Solo processing including conversion to netcdf
-
-* Apply time offset
-
-* Compare against pre- and post-recovery clock calibration (warm water dip)
+* Process RBR Solo thermistor data including conversion to netcdf with proper meta data.
+* Apply time offset.
+* Compare time against pre- and post-recovery clock calibration (warm water dip).
 
 
 Examples
 --------
-
 An example jupyter notebook including a little test data file can be found in [notebooks](./notebooks).
 
 

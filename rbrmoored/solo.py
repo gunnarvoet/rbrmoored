@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Module rbrmoored.solo"""
+"""Read and process RBR Solo thermistor data.
+- Read data in .rsk format into an `xarray.DataArray` with `read`.
+- `proc` combines processing steps.
+"""
 
 
 import os
@@ -13,7 +16,7 @@ import xarray as xr
 
 import pyrsktools
 
-import gvpy as gv
+import rbrmoored as rbr
 
 
 def proc(
@@ -114,14 +117,6 @@ def proc(
     return solo
 
 
-def read_rsk(solofile):
-    rsk = pyrsktools.open(solofile)
-    print("reading SN {:d}".format(rsk.instrument.serial))
-    # read all data
-    data = rsk.npsamples()
-    return rsk, data
-
-
 def read(solofile):
     """Read RBR Solo data in .rsk format and output as netcdf
 
@@ -135,19 +130,29 @@ def read(solofile):
     solo : xarray.DataArray
         DataArray with thermistor data
     """
+    # Access .rsk file
+    rsk = pyrsktools.RSK(solofile)
+    rsk.open()
 
-    # read data
-    rsk, data = read_rsk(solofile)
-    solo_t = data["temperature_00"]
-    solo_timez = data["timestamp"]
-    # strip time zone info or else numpy complains
-    solo_time = [tz.replace(tzinfo=None) for tz in solo_timez]
-    # generate time vector in numpy time format
-    tt = np.array([np.datetime64(ti, "ns") for ti in solo_time])
+    # Read all data
+    print("reading SN {:d}".format(rsk.instrument.serialID))
+    rsk.readdata()
+
+    # Make sure we have temperature as a channel
+    assert "temperature" in rsk.channelNames
+    # Find temperature channel index
+    temperature_channel_index = rsk.channelNames.index("temperature")
+    solo_t = rsk.data["temperature"]
+    time = rsk.data["timestamp"]
+    # convert time to nanosecond precision, not because it is necessary but because
+    # xarray currently complains about this
+    time = time.astype("datetime64[ns]")
+
     # generate DataArray
-    solo = xr.DataArray(solo_t, coords={"time": tt}, dims=["time"], name="t")
+    solo = xr.DataArray(solo_t, coords={"time": time}, dims=["time"], name="t")
+    sampling_period = rsk.scheduleInfo.samplingperiod()
     # calculate sampling period in s
-    sampling_period = np.round(
+    sampling_period_calc = np.round(
         solo.time[:100]
         .diff(dim="time")
         .median()
@@ -156,23 +161,26 @@ def read(solofile):
         / 1e9,
         decimals=1,
     )
+    # compare calculated sampling period to meta data
+    assert sampling_period == sampling_period_calc
+
     # write meta data to attributes
-    solo.attrs["units"] = rsk.channels["temperature_00"].units
+    solo.attrs["units"] = rsk.channels[temperature_channel_index].units
     solo.attrs["long_name"] = "temperature"
-    solo.attrs["SN"] = rsk.instrument.serial
+    solo.attrs["SN"] = rsk.instrument.serialID
     solo.attrs["model"] = rsk.instrument.model
-    solo.attrs["firmware version"] = rsk.instrument.firmware_version
+    solo.attrs["firmware version"] = rsk.instrument.firmwareVersion
     file = Path(rsk.deployment.name)
+    solo.attrs["pyrsktools version"] = pyrsktools.__version__
+    solo.attrs["rbrmoored version"] = rbr.__version__
     solo.attrs["file"] = file.name
-    solo.attrs["time drift in ms"] = rsk.deployment.logger_time_drift
-    download_time = np.datetime64(
-        rsk.deployment.download_time.replace(tzinfo=None), "ns"
-    )
+    solo.attrs["time drift in ms"] = rsk.deployment.loggerTimeDrift
+    download_time = rsk.deployment.timeOfDownload
     if download_time > solo.time[-1]:
-        solo.attrs["download time"] = "{}".format(rsk.deployment.download_time)
+        solo.attrs["download time"] = f"{download_time}"
     else:
         solo.attrs["download time"] = "N/A"
-    sample_size = rsk.deployment.sample_size
+    sample_size = rsk.deployment.sampleSize
     solo.attrs["sample size"] = (
         sample_size if sample_size is not None else "N/A"
     )
@@ -294,9 +302,10 @@ def plot(solo, figure_out=None, cal_time=None):
     # Set up figure.
     if show_cal:
         if ncal == 1:
-            fig, [ax0, [axcal]] = plt.subplots(
+            fig, [ax0, axcal] = plt.subplots(
                 nrows=2, ncols=1, figsize=(10, 7), constrained_layout=True
             )
+            axcal = [axcal]
         elif ncal == 2:
             fig = plt.figure(
                 constrained_layout=True,
@@ -361,7 +370,7 @@ def plot(solo, figure_out=None, cal_time=None):
     ax0.grid()
     ax0.set(title="RBR Solo SN {}".format(solo.attrs["SN"]))
     ax0.set(xlabel="")
-    gv.plot.concise_date(ax0)
+    rbr.utils.concise_date(ax0)
 
     # Plot calibration.
     if show_cal:
@@ -404,7 +413,7 @@ def plot(solo, figure_out=None, cal_time=None):
                 xlabel="",
             )
             axi.grid()
-            gv.plot.concise_date(axi)
+            rbr.utils.concise_date(axi)
         if ncal == 2:
             axcal[-1].set(ylabel="")
 

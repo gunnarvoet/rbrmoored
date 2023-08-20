@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 with open("README.md") as readme_file:
     readme = readme_file.read()
 
-with open("HISTORY.rst") as history_file:
+with open("HISTORY.md") as history_file:
     history = history_file.read()
 
 setup(
@@ -19,10 +19,10 @@ setup(
     long_description=f"{readme}\n\n{history}",
     long_description_content_type="text/x-rst",
     # Requirements
-    python_requires=">=3.6",
-    install_requires=["numpy", "gsw", "scipy", "matplotlib", "pyrsktools"],
+    python_requires=">=3.8",
+    install_requires=["numpy", "xarray", "matplotlib", "pyrsktools"],
     extras_require={
-        "test": ["pytest"],  # install these with: pip install mixsea[test]
+        "test": ["pytest"],  # install these with: pip install rbrmoored[test]
     },
     # Packaging
     packages=find_packages(include=["rbrmoored", "rbrmoored.*"], exclude=["*.tests"]),
