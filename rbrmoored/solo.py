@@ -5,7 +5,6 @@
 - `proc` combines processing steps.
 """
 
-
 import os
 from pathlib import Path
 import datetime
@@ -254,7 +253,10 @@ def save_nc(solo, data_out):
 
 
 def plot(solo, figure_out=None, cal_time=None):
-    """Save RBR Solo data in netcdf format.
+    """Plot RBR Solo time series.
+
+    Plots additional panels with clock calibration if calibration time(s) are
+    provided.
 
     Parameters
     ----------
