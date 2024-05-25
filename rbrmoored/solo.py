@@ -5,11 +5,8 @@
 - `proc` combines processing steps.
 """
 
-import os
 from pathlib import Path
-import datetime
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 import numpy as np
 import xarray as xr
 

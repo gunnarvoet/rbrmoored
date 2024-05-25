@@ -1,5 +1,6 @@
 *.nc
 *.egg-info
 src
+build
 
 
