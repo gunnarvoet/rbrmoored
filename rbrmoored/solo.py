@@ -23,6 +23,8 @@ def proc(
     show_plot=True,
     cal_time=None,
     max_time_drift=4.0,
+    offset_to_utc=0,
+    offset_time_drift=0,
 ):
     """Combine RBR Solo processing steps.
 
@@ -50,6 +52,13 @@ def proc(
         None.
     max_time_drift : float, optional
         Maximum time drift to apply [hours]. Default 4.
+    offset_to_utc : float
+        Apply an additional offset (in hours) to the time vector. Good for
+        correcting clocks accidentally set to local time. Default no offset.
+    offset_time_drift : float
+        Correct the time offset between sensor and download computer (in
+        hours). This is helpful when the download computer has not been set to
+        UTC time. Default no offset.
 
     Returns
     -------
@@ -81,7 +90,7 @@ def proc(
                 pass
         else:
             print("reading raw rsk file")
-            solo = read(solofile)
+            solo = read(solofile, offset_to_utc=offset_to_utc, offset_time_drift=offset_time_drift)
             savenc = True
     else:
         print("reading raw rsk file")
@@ -113,13 +122,20 @@ def proc(
     return solo
 
 
-def read(solofile):
+def read(solofile, offset_to_utc=0, offset_time_drift=0):
     """Read RBR Solo data in .rsk format and output as netcdf
 
     Parameters
     ----------
     solofile : path object
         Path to solo file
+    offset_to_utc : float
+        Apply an additional offset (in hours) to the time vector. Good for
+        correcting clocks accidentally set to local time. Default no offset.
+    offset_time_drift : float
+        Correct the time offset between sensor and download computer (in
+        hours). This is helpful when the download computer has not been set to
+        UTC time. Default no offset.
 
     Returns
     -------
@@ -143,6 +159,8 @@ def read(solofile):
     # convert time to nanosecond precision, not because it is necessary but because
     # xarray currently complains about this
     time = time.astype("datetime64[ns]")
+    # apply possible offset to UTC
+    time += np.timedelta64(offset_to_utc, "h")
 
     # generate DataArray
     solo = xr.DataArray(solo_t, coords={"time": time}, dims=["time"], name="t")
@@ -170,7 +188,7 @@ def read(solofile):
     solo.attrs["pyrsktools version"] = pyrsktools.__version__
     solo.attrs["rbrmoored version"] = rbr.__version__
     solo.attrs["file"] = file.name
-    solo.attrs["time drift in ms"] = rsk.deployment.loggerTimeDrift
+    solo.attrs["time drift in ms"] = rsk.deployment.loggerTimeDrift + (offset_time_drift * 3600 * 1e3)
     download_time = rsk.deployment.timeOfDownload
     if download_time > solo.time[-1]:
         solo.attrs["download time"] = f"{download_time}"
