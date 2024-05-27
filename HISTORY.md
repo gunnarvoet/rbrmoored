@@ -8,6 +8,8 @@
 
 ### New Features
 
+- Add options to shift sensor time or recorded time offset prior to data processing.
+
 ### Bug fixes
 
 ### Documentation
