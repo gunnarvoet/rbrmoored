@@ -1,6 +1,32 @@
 # History
 
-## v0.2.0 (unreleased)
+<!-- ## (unreleased) -->
+
+<!-- ### Breaking changes -->
+
+<!-- ### New Features -->
+
+<!-- ### Bug fixes -->
+
+<!-- ### Documentation -->
+
+<!-- ### Internal Changes -->
+
+
+## (unreleased)
+
+### Breaking changes
+
+### New Features
+
+### Bug fixes
+
+### Documentation
+
+### Internal Changes
+
+
+## v2024.05
 
 ### Breaking changes
 
@@ -22,6 +48,6 @@
 - Remove `gvpy` dependency.
 
 
-## 0.1.0 (unreleased)
+## 0.1.0
 
 -   Initial release.
