@@ -2,17 +2,14 @@ name: rbrmoored
 channels:
   - conda-forge
 dependencies:
-  - python=3.11
+  - python=3.12
   - matplotlib
   - numpy
   - pytest
   - xarray
   - netcdf4
-  - pip
-  - isort
-  - black
-  - flake8
   - pdoc
+  - pip
   - pip:
     - pyrsktools
     - "-e ."

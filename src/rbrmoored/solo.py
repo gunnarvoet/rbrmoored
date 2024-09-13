@@ -207,7 +207,7 @@ def read(solofile, offset_to_utc=0, offset_time_drift=0):
     return solo
 
 
-def time_offset(solo):
+def time_offset(solo, time_drift=None):
     """Apply time offset to time series.
 
     Reads the time drift parameter from the dataset and applies it to the time
@@ -218,6 +218,12 @@ def time_offset(solo):
     ----------
     solo : xarray.DataArray
         DataArray with thermistor data
+    time_drift : float, optional
+        Time drift in milliseconds. Supplying the time drift is usually not
+        necessary but may be helpful if the drift determined by Ruskin fails.
+        If supplied, will overwrite the Ruskin-based time drift. A general use
+        case would be a time drift determined from the post-deployment clock
+        calibration (warm water dip).
 
     Returns
     -------
@@ -228,6 +234,11 @@ def time_offset(solo):
     if solo.attrs["time offset applied"]:
         print("time offset has already been applied")
     else:
+        if time_drift is None:
+            time_drift = solo.attrs["time drift in ms"]
+        else:
+            print(f"Replacing time drift of {solo.attrs['time drift in ms']}ms in attributes with {time_drift}ms")
+            solo.attrs["time drift in ms"] = time_drift
         print(
             "applying time offset of {}ms".format(
                 solo.attrs["time drift in ms"]
@@ -236,7 +247,7 @@ def time_offset(solo):
         # generate linear time drift vector
         old_time = solo.time.copy()
         time_offset_linspace = np.linspace(
-            0, solo.attrs["time drift in ms"], solo.attrs["sample size"]
+            0, time_drift, solo.attrs["sample size"]
         )
         # convert to numpy timedelta64
         # this format can't handle non-integers, so we switch to nanoseconds

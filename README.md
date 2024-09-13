@@ -2,10 +2,9 @@ rbrmoored
 =========
 
 Data processing for moored RBR sensors.
-Currently the package only processes temperature channels as it is geared to processing data from RBRs Solo thermistors.
+Currently the package only processes temperature channels as it is geared towards processing data from RBR Solo thermistors.
 The package wraps RBRs [pyrsktools](https://docs.rbr-global.com/pyrsktools/index.html).
 
-* Free software: MIT license
 
 Features
 --------

@@ -13,17 +13,19 @@
 <!-- ### Internal Changes -->
 
 
-## (unreleased)
+## v2024.09 (unreleased)
 
 ### Breaking changes
 
 ### New Features
+- Allow to provide sensor drift time to overwrite auto-generated sensor drift during data download in Ruskin.
 
 ### Bug fixes
 
 ### Documentation
 
 ### Internal Changes
+- Change from setup.py to pyproject.toml.
 
 
 ## v2024.05
