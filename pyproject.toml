@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.8.22,<0.10.0"]
+build-backend = "uv_build"
 
 [project]
 name = "rbrmoored"
-version = "2024.09"
+version = "2026.03"
 authors = [
     {name = "Gunnar Voet", email = "gvoet@ucsd.edu"},
     ]
@@ -22,19 +22,24 @@ classifiers = [
     ]
 requires-python = ">= 3.10"
 dependencies = [
-    "numpy",
+    "numpy>=2.0.0",
     "xarray",
-    "netcdf4",
-    "pyrsktools",
-    ]
-
-[project.optional-dependencies]
-test = [
-  "pytest >=6.0",
+    "netcdf4>=1.7.0",
+    "pyrsktools>=1.1.2",
 ]
 
+# with the following we force pyrsktools to work with numpy>=2
+# [tool.uv]
+# override-dependencies = [
+#     "numpy>=2.0.0"
+# ]
+
+[tool.uv.sources]
+# pyrsktools = { git = "https://github.com/gunnarvoet/pyrsktools", branch = "gunnar_main" }
+pyrsktools = { path = "../pyrsktools", editable = true }
+
+
 [project.urls]
-# Homepage = "https://example.com"
 Documentation = "https://gunnarvoet.net/sbemoored/rbrmoored.html"
 Repository = "https://github.com/gunnarvoet/rbrmoored.git"
 Issues = "https://github.com/gunnarvoet/rbrmoored/issues"
@@ -48,6 +53,19 @@ minversion = "6.0"
 # addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 addopts = []
 xfail_strict = true
-filterwarnings = ["error"]
+filterwarnings = [
+    "ignore:numpy.dtype size changed",
+    "ignore:numpy.ufunc size changed",
+    "ignore:numpy.ndarray size changed",
+    ]
 log_cli_level = "info"
-testpaths = ["tests", ]
+testpaths = [
+    "src/rbrmoored/tests/",
+    ]
+
+[dependency-groups]
+dev = [
+    "pdoc>=16.0.0",
+    "pytest>=9.0.2",
+    "ruff>=0.15.4",
+]

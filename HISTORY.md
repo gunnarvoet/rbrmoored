@@ -25,6 +25,19 @@
 ### Internal Changes
 
 
+## v2026.03
+
+<!-- ### Breaking changes -->
+
+### New Features
+- Add despiking procedure for v3 time series.
+
+### Internal Changes
+- Speed up time vector correction.
+- Move to uv build system.
+- Use patched version of pyrsktools to be able to use numpy>=2.0.0.
+
+
 ## v2024.09
 
 ### New Features

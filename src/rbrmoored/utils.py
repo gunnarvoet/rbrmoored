@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Utilities.
-"""
+"""Utilities."""
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.dates as mdates
+
 
 def concise_date(ax=None, minticks=3, maxticks=10, show_offset=True, **kwargs):
     """
@@ -34,9 +34,7 @@ def concise_date(ax=None, minticks=3, maxticks=10, show_offset=True, **kwargs):
     if ax is None:
         ax = plt.gca()
     locator = mdates.AutoDateLocator(minticks=minticks, maxticks=maxticks)
-    formatter = mdates.ConciseDateFormatter(
-        locator, show_offset=show_offset, **kwargs
-    )
+    formatter = mdates.ConciseDateFormatter(locator, show_offset=show_offset, **kwargs)
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
     # remove axis label "time" if present
