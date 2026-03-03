@@ -9,6 +9,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+from scipy.signal import find_peaks
+from scipy.ndimage import median_filter
 
 import pyrsktools
 
@@ -19,6 +21,7 @@ def proc(
     solofile,
     data_out=None,
     apply_time_offset=True,
+    apply_spike_removal=True,
     figure_out=None,
     show_plot=True,
     cal_time=None,
@@ -43,6 +46,8 @@ def proc(
         netcdf format if `data_out` is provided. Default None.
     apply_time_offset : bool, optional
         Apply time offset. Default True.
+    apply_spike_removal : bool, optional
+        Apply spike removal (only for v3 sensors). Default True.
     figure_out : path object, optional
         Path to figure output directory. Default None.
     show_plot : bool, optional
@@ -96,6 +101,11 @@ def proc(
         print("reading raw rsk file")
         solo = read(solofile)
         savenc = False
+
+    # spike removal
+    if apply_spike_removal:
+        solo = spike_removal(solo)
+
     # apply time drift
     if apply_time_offset:
         if solo.attrs["time drift in ms"] == 0:
@@ -448,3 +458,93 @@ def plot(solo, figure_out=None, cal_time=None):
     if figure_out is not None or False:
         figurename = "{:s}.png".format(solo.attrs["file"][:-4])
         plt.savefig(figure_out.joinpath(figurename), dpi=300)
+
+
+def spike_removal(solo):
+    """Remove spikes in RBRsolo³ time series.
+
+    Parameters
+    ----------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+
+    Returns
+    -------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    """
+
+    # Only apply to the RBRsolo³ version, not older units.
+    if solo.attrs["model"] != "RBRsolo³":
+        return solo
+
+    def _peak_detector(y, window_size, sigma, distance):
+        """
+        This pure NumPy/SciPy function runs inside each Dask chunk.
+        Because it uses compiled C filters, it processes days of data in milliseconds.
+        """
+        # 1. Fast rolling median tracks the slope AND ignores the spikes natively
+        baseline = median_filter(y, size=window_size)
+        deviation = np.abs(y - baseline)
+
+        # 2. Fast rolling MAD (Median Absolute Deviation) tracks the noise floor
+        rolling_mad = median_filter(deviation, size=window_size)
+
+        # 3. Calculate dynamic threshold (MAD * 1.4826 perfectly approximates standard deviation)
+        threshold = sigma * (rolling_mad * 1.4826)
+
+        # 4. Extract peaks
+        peaks, _ = find_peaks(deviation, height=threshold, distance=distance)
+
+        # Generate the boolean mask
+        mask = np.zeros_like(y, dtype=bool)
+        mask[peaks] = True
+        return mask
+
+
+    def despike(da, window_size=15, sigma=1.5, period_s=60, sample_rate_s=2):
+        """
+        Maps ultra-fast C-compiled algorithms across lazy Dask chunks.
+        """
+        print("1. Mapping C-compiled SciPy filters across Dask chunks...")
+        min_dist_samples = int((period_s / sample_rate_s) * 0.9)
+
+        # apply_ufunc hands the raw data directly to our fast function,
+        # completely bypassing xarray's slow .construct() and .quantile() methods!
+        spike_mask = xr.apply_ufunc(
+            _peak_detector,
+            da,
+            kwargs={
+                "window_size": window_size,
+                "sigma": sigma,
+                "distance": min_dist_samples,
+            },
+            dask="parallelized",
+            output_dtypes=[bool],
+        )
+
+        print("2. Generating lazy interpolation graph...")
+        da_clean = da.where(~spike_mask, np.nan)
+        filler = da_clean.rolling(time=3, center=True, min_periods=1).mean()
+        da_filled = da_clean.fillna(filler)
+
+        return da_filled, spike_mask
+
+    despiking_applied = solo.attrs.get("despiking applied", 0)
+    if bool(despiking_applied):
+        return solo
+
+    # chunk by day (note: t is the full time series, including CTD calibration cast;
+    # time in the lab; deployment; recovery etc.)
+    da_chunked = solo.chunk({"time": 43200})
+
+    # build the pipeline
+    da_clean_lazy, anomaly_log_lazy = despike(da_chunked)
+
+    # run .compute() to carry out the computation
+    da_clean = da_clean_lazy.compute()
+    is_spike = anomaly_log_lazy.compute()
+
+    da_clean.attrs["despiking applied"] = 1
+
+    return da_clean
