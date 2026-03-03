@@ -243,6 +243,75 @@ def time_offset(solo, time_drift=None):
 
     if solo.attrs["time offset applied"]:
         print("time offset has already been applied")
+        return solo
+
+    if time_drift is None:
+        time_drift = solo.attrs["time drift in ms"]
+    else:
+        print(f"Replacing time drift of {solo.attrs['time drift in ms']}ms in attributes with {time_drift}ms")
+        solo.attrs["time drift in ms"] = time_drift
+    print(f"Applying time offset of {time_drift}ms")
+
+    # # generate linear time drift vector
+    # old_time = solo.time.copy()
+    # time_offset_linspace = np.linspace(
+    #     0, time_drift, solo.attrs["sample size"]
+    # )
+    # # convert to numpy timedelta64
+    # # this format can't handle non-integers, so we switch to nanoseconds
+    # time_offset = [
+    #     np.timedelta64(int(np.round(ti * 1e6)), "ns")
+    #     for ti in time_offset_linspace
+    # ]
+    # new_time = solo.time - time_offset
+    # solo["time"] = new_time
+    # solo.attrs["time offset applied"] = 1
+
+    # 3. VECTORIZED CALCULATION
+    # Calculate drift in nanoseconds directly as a float array
+    # time_drift (ms) * 1e6 = nanoseconds
+    drift_ns = np.linspace(0, time_drift * 1e6, solo.sizes["time"])
+
+    # Cast the entire array to integer and then to timedelta64[ns]
+    # This replaces the slow list comprehension
+    time_delta_vector = drift_ns.round().astype('timedelta64[ns]')
+
+    # 4. Apply to coordinates
+    # Using .assign_coords is often cleaner/faster in xarray than direct assignment
+    solo = solo.assign_coords(time=solo.time - time_delta_vector)
+
+    # 5. Update attributes
+    solo.attrs["time offset applied"] = 1
+
+    return solo
+
+
+def time_offset_slow(solo, time_drift=None):
+    """Apply time offset to time series.
+
+    Reads the time drift parameter from the dataset and applies it to the time
+    vector. Adds the attribute 'time offset applied' to the dataset and sets it
+    to 1. Will not re-apply the time offset if 'time offset applied' is 1.
+
+    Parameters
+    ----------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    time_drift : float, optional
+        Time drift in milliseconds. Supplying the time drift is usually not
+        necessary but may be helpful if the drift determined by Ruskin fails.
+        If supplied, will overwrite the Ruskin-based time drift. A general use
+        case would be a time drift determined from the post-deployment clock
+        calibration (warm water dip).
+
+    Returns
+    -------
+    solo : xarray.DataArray
+        DataArray with thermistor data
+    """
+
+    if solo.attrs["time offset applied"]:
+        print("time offset has already been applied")
     else:
         if time_drift is None:
             time_drift = solo.attrs["time drift in ms"]
