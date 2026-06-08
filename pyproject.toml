@@ -35,8 +35,9 @@ dependencies = [
 # ]
 
 [tool.uv.sources]
-# pyrsktools = { git = "https://github.com/gunnarvoet/pyrsktools", branch = "gunnar_main" }
-pyrsktools = { path = "../pyrsktools", editable = true }
+# Resolve from the numpy>=2 fork so rbrmoored installs cleanly from git.
+# For local editable work: uv pip install -e ../pyrsktools --no-deps
+pyrsktools = { git = "https://github.com/gunnarvoet/pyrsktools", branch = "gunnar_main" }
 
 
 [project.urls]
