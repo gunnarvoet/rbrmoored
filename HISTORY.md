@@ -38,6 +38,9 @@
   removed good data - 2.5% of all samples in one 0.5 s record. Detection is now
   based on folding the record onto the spike period and comparing against folds
   at detuned periods.
+- `__version__` is read from the package metadata instead of a hard-coded string
+  that had gone stale, so the `rbrmoored version` attribute written by `read` is
+  correct.
 
 ### Documentation
 
