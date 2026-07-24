@@ -26,20 +26,17 @@ BROWSER := python -c "$$BROWSER_PYSCRIPT"
 help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
-style: ## style code using isort & black, then check style using flake8
-	isort rbrmoored/*.py
-	isort rbrmoored/tests/*.py
-	black rbrmoored
-	flake8 rbrmoored 
+format: ## style code using ruff format
+	uv run ruff format src/rbrmoored/
 
-style-check: ## check code style using isort & black, then check style using flake8
-	isort -c rbrmoored/*.py
-	isort -c rbrmoored/tests/*.py
-	black --check rbrmoored
-	flake8 rbrmoored 
+format-check: ## check code style using ruff format --diff
+	uv run ruff format --diff src/rbrmoored/
+
+check: ## run ruff code checking
+	uv run ruff check src/rbrmoored/
 
 test: ## run tests quickly with the default Python
-	pytest
+	uv run pytest
 
 docs: ## generate documentation using pdoc
 	rm -rf docs
@@ -49,14 +46,3 @@ docs: ## generate documentation using pdoc
 servedocs: ## compile the docs & watch for changes
 	PDOC_ALLOW_EXEC=1 pdoc -d numpy -t .pdoc-theme-gv --math rbrmoored
 	# $(BROWSER) http://localhost:8080
-
-# release: dist ## package and upload a release
-# 	twine upload dist/*
-
-# dist: clean ## builds source and wheel package
-# 	python setup.py sdist
-# 	python setup.py bdist_wheel
-# 	ls -l dist
-
-# install: clean ## install the package to the active Python's site-packages
-# 	python setup.py install
