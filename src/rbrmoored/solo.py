@@ -9,7 +9,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-from scipy.signal import find_peaks
 from scipy.ndimage import median_filter
 
 import pyrsktools
@@ -529,91 +528,270 @@ def plot(solo, figure_out=None, cal_time=None):
         plt.savefig(figure_out.joinpath(figurename), dpi=300)
 
 
-def spike_removal(solo):
-    """Remove spikes in RBRsolo³ time series.
+def _phase(index, dt, period_s, n_bins):
+    """Bin each sample by its position within one artifact cycle.
+
+    Parameters
+    ----------
+    index : numpy.ndarray
+        Sample index within the record.
+    dt : float
+        Sampling period in seconds.
+    period_s : float
+        Cycle length in seconds. Need not be a multiple of `dt`.
+    n_bins : int
+        Number of phase bins.
+
+    Returns
+    -------
+    phase : numpy.ndarray
+        Phase bin of each sample, in `[0, n_bins)`.
+    """
+    cycle_samples = period_s / dt
+    phase = ((index % cycle_samples) / cycle_samples * n_bins).astype(np.int16)
+    return np.clip(phase, 0, n_bins - 1, out=phase)
+
+
+def _fold(deviation, index, dt, period_s, n_bins, trim_fraction):
+    """Fold a record onto one artifact cycle.
+
+    A trimmed mean over all cycles is formed for each phase bin, rather than a
+    plain mean, so that the result does not depend on whether the large
+    excursions from deck and lab time are part of the record. A plain median is
+    no good here because the deviation from a running median has a point mass at
+    zero - a sample is its own running median every so often. The composite is
+    centered on its median so that the peak is measured against the background
+    level rather than against zero.
+
+    Parameters
+    ----------
+    deviation : numpy.ndarray
+        Deviation of the record from its running median.
+    index : numpy.ndarray
+        Sample index within the record.
+    dt : float
+        Sampling period in seconds.
+    period_s : float
+        Cycle length in seconds.
+    n_bins : int
+        Number of phase bins.
+    trim_fraction : float
+        Fraction of cycles trimmed off either end.
+
+    Returns
+    -------
+    composite : numpy.ndarray
+        Trimmed mean deviation per phase bin.
+    """
+    phase = _phase(index, dt, period_s, n_bins)
+    counts = np.bincount(phase, minlength=n_bins)
+    edges = np.concatenate([[0], np.cumsum(counts)])
+    deviation_by_bin = deviation[np.argsort(phase, kind="stable")]
+    composite = np.zeros(n_bins)
+    for k in range(n_bins):
+        cycles = np.sort(deviation_by_bin[edges[k] : edges[k + 1]])
+        if cycles.size == 0:
+            continue
+        trim = int(trim_fraction * cycles.size)
+        composite[k] = cycles[trim : cycles.size - trim].mean()
+    return composite - np.median(composite)
+
+
+def spike_removal(
+    solo,
+    period_s=60.0,
+    window_s=30.0,
+    min_snr=6.0,
+    max_spike_samples=3,
+    min_cycles=30,
+    trim_fraction=0.1,
+    verbose=True,
+):
+    """Remove the periodic spike in RBRsolo³ time series.
+
+    RBRsolo³ loggers show a small positive spike in temperature, of order 1 mK
+    and typically confined to a single sample, once every 60 s. It is caused by
+    heating of the A/D converter during its calibration cycle. In a temperature
+    variance spectrum the artifact shows up as a sharp line at the 60 s period
+    together with its harmonics.
+
+    The artifact is deterministic: it repeats at a fixed period and at a fixed
+    phase within that period. This is exploited here. The record is folded onto
+    the spike period and a trimmed mean deviation from a running median is
+    formed for each phase bin. A spike shows up as a single bin standing well
+    above the rest. Whether it does is decided by folding the same record at
+    slightly detuned periods, which is what the fold looks like when there is
+    nothing periodic to find. Only samples falling into the spike bin (and, if
+    the spike is wider than one sample, into the adjacent bins) are replaced, by
+    linear interpolation from the neighbouring samples.
+
+    If no significant spike is found the record is returned unchanged and the
+    attribute `despiking applied` is set to 0. This is the expected outcome for
+    loggers that do not show the artifact - detecting spikes relative to a local
+    noise estimate alone would always find *something* and remove good data.
+
+    Records that are not RBRsolo³, that have already been despiked, or that are
+    shorter than `min_cycles` spike periods are returned unchanged.
+
+    Note that the spike is locked to the logger clock, so this should be run
+    before the clock drift correction in `time_offset`. `proc` does that.
 
     Parameters
     ----------
     solo : xarray.DataArray
-        DataArray with thermistor data
+        DataArray with thermistor data. Requires the attributes `model` and
+        `sampling period in s` as written by `read`.
+    period_s : float, optional
+        Period of the spike in seconds. Default 60.
+    window_s : float, optional
+        Length of the running median window in seconds. Used to remove the
+        background signal before folding. Default 30.
+    min_snr : float, optional
+        Minimum ratio of the largest phase bin of the folded record over the
+        largest phase bin found when folding at detuned periods for a spike to
+        be accepted. Default 6.
+    max_spike_samples : int, optional
+        Maximum number of samples per cycle that may be replaced. Default 3.
+    min_cycles : int, optional
+        Minimum number of spike periods a record must cover. Default 30.
+    trim_fraction : float, optional
+        Fraction of cycles trimmed off either end when folding the record.
+        Keeps deck and lab time from dominating the fold. Default 0.1.
+    verbose : bool, optional
+        Print what was found and done. Default True.
 
     Returns
     -------
     solo : xarray.DataArray
-        DataArray with thermistor data
+        DataArray with thermistor data. The following attributes document the
+        result: `despiking applied`, `spike period in s`, `spike phase in s`
+        (position of the spike within the cycle, counted from the whole minute),
+        `spike amplitude in K`, `spike detection snr` and `spikes removed`.
     """
 
+    def info(message):
+        if verbose:
+            print(message)
+
     # Only apply to the RBRsolo³ version, not older units.
-    if solo.attrs["model"] != "RBRsolo³":
+    if solo.attrs.get("model", "") != "RBRsolo³":
         return solo
 
-    def _peak_detector(y, window_size, sigma, distance):
-        """
-        This pure NumPy/SciPy function runs inside each Dask chunk.
-        Because it uses compiled C filters, it processes days of data in milliseconds.
-        """
-        # 1. Fast rolling median tracks the slope AND ignores the spikes natively
-        baseline = median_filter(y, size=window_size)
-        deviation = np.abs(y - baseline)
+    if bool(solo.attrs.get("despiking applied", 0)):
+        info("despiking has already been applied")
+        return solo
 
-        # 2. Fast rolling MAD (Median Absolute Deviation) tracks the noise floor
-        rolling_mad = median_filter(deviation, size=window_size)
-
-        # 3. Calculate dynamic threshold (MAD * 1.4826 perfectly approximates standard deviation)
-        threshold = sigma * (rolling_mad * 1.4826)
-
-        # 4. Extract peaks
-        peaks, _ = find_peaks(deviation, height=threshold, distance=distance)
-
-        # Generate the boolean mask
-        mask = np.zeros_like(y, dtype=bool)
-        mask[peaks] = True
-        return mask
-
-
-    def despike(da, window_size=15, sigma=1.5, period_s=60, sample_rate_s=2):
-        """
-        Maps ultra-fast C-compiled algorithms across lazy Dask chunks.
-        """
-        print("1. Mapping C-compiled SciPy filters across Dask chunks...")
-        min_dist_samples = int((period_s / sample_rate_s) * 0.9)
-
-        # apply_ufunc hands the raw data directly to our fast function,
-        # completely bypassing xarray's slow .construct() and .quantile() methods!
-        spike_mask = xr.apply_ufunc(
-            _peak_detector,
-            da,
-            kwargs={
-                "window_size": window_size,
-                "sigma": sigma,
-                "distance": min_dist_samples,
-            },
-            dask="parallelized",
-            output_dtypes=[bool],
+    dt = float(solo.attrs["sampling period in s"])
+    n_bins = round(period_s / dt)
+    if not np.isclose(period_s / dt, n_bins):
+        raise ValueError(
+            f"spike period of {period_s}s is not a multiple of the sampling "
+            f"period of {dt}s"
         )
 
-        print("2. Generating lazy interpolation graph...")
-        da_clean = da.where(~spike_mask, np.nan)
-        filler = da_clean.rolling(time=3, center=True, min_periods=1).mean()
-        da_filled = da_clean.fillna(filler)
-
-        return da_filled, spike_mask
-
-    despiking_applied = solo.attrs.get("despiking applied", 0)
-    if bool(despiking_applied):
+    values = solo.data.astype(float)
+    if values.size < min_cycles * n_bins:
+        info(
+            f"record covers less than {min_cycles} spike periods, "
+            "not looking for spikes"
+        )
         return solo
 
-    # chunk by day (note: t is the full time series, including CTD calibration cast;
-    # time in the lab; deployment; recovery etc.)
-    da_chunked = solo.chunk({"time": 43200})
+    # Sample index within the record. Derived from the time vector via the
+    # median sample spacing so that gaps are accounted for and so that this
+    # still works on a record that has had the clock drift applied.
+    time_s = solo.time.data.astype("datetime64[ns]").astype("int64") / 1e9
+    spacing = np.median(np.diff(time_s))
+    index = np.round((time_s - time_s[0]) / spacing).astype(np.int64)
 
-    # build the pipeline
-    da_clean_lazy, anomaly_log_lazy = despike(da_chunked)
+    # Deviation from a running median. The median tracks the background signal
+    # while ignoring the spikes.
+    window_size = round(window_s / dt)
+    window_size += 1 - window_size % 2  # odd window, centered
+    deviation = values - median_filter(values, size=window_size)
 
-    # run .compute() to carry out the computation
-    da_clean = da_clean_lazy.compute()
-    is_spike = anomaly_log_lazy.compute()
+    # Fold onto the spike period.
+    composite = _fold(deviation, index, dt, period_s, n_bins, trim_fraction)
+    peak_bin = int(np.argmax(np.abs(composite)))
 
-    da_clean.attrs["despiking applied"] = 1
+    # How large a peak does folding this record produce when there is nothing
+    # periodic to find? Fold at slightly detuned periods to find out. A real
+    # spike smears out over all bins there, so these folds sample the null
+    # hypothesis. Comparing against the scatter between neighbouring bins of
+    # the on-period fold instead would be far too generous: that scatter is
+    # correlated over the length of the running median window and any record
+    # would end up with a "significant" bin.
+    null_level = max(
+        np.max(np.abs(_fold(deviation, index, dt, null_period, n_bins, trim_fraction)))
+        for null_period in [
+            period_s * (1 + offset / n_bins) for offset in (-2, -1, 1, 2)
+        ]
+    )
+    snr = np.abs(composite[peak_bin]) / null_level if null_level > 0 else np.inf
 
-    return da_clean
+    solo = solo.copy()
+    solo.attrs["spike period in s"] = period_s
+    solo.attrs["spike phase in s"] = float((time_s[0] + peak_bin * dt) % period_s)
+    solo.attrs["spike amplitude in K"] = float(composite[peak_bin])
+    solo.attrs["spike detection snr"] = float(snr)
+
+    if snr < min_snr:
+        info(
+            f"no periodic spike detected (snr {snr:.1f} < {min_snr:.1f}), "
+            "no samples removed"
+        )
+        solo.attrs["despiking applied"] = 0
+        solo.attrs["spikes removed"] = 0
+        return solo
+
+    # Scatter between neighbouring bins of the on-period fold. Now that the
+    # spike is established this is the right scale for delineating its width.
+    # Bins within half a median window of the peak are excluded: the spike sits
+    # in their running median and biases them away from zero by a fraction of a
+    # percent of its amplitude.
+    excluded = min(window_size // 2, n_bins // 4)
+    background = np.delete(
+        composite, [(peak_bin + i) % n_bins for i in range(-excluded, excluded + 1)]
+    )
+    bin_noise = 1.4826 * np.median(np.abs(background - np.median(background)))
+
+    # Grow the spike into the adjacent bins as long as they stand out as well.
+    # A single sample is the norm, but the sensor may not have recovered fully
+    # by the next sample. Candidates must deviate in the same direction as the
+    # peak: the bins around the spike are pulled the other way by the running
+    # median and are not part of the artifact.
+    def is_spike_bin(bin_index):
+        return (
+            np.sign(composite[bin_index]) == np.sign(composite[peak_bin])
+            and np.abs(composite[bin_index]) >= min_snr * bin_noise
+        )
+
+    spike_bins = [peak_bin]
+    while len(spike_bins) < max_spike_samples:
+        after = (spike_bins[-1] + 1) % n_bins
+        if not is_spike_bin(after):
+            break
+        spike_bins.append(after)
+    while len(spike_bins) < max_spike_samples:
+        before = (spike_bins[0] - 1) % n_bins
+        if not is_spike_bin(before):
+            break
+        spike_bins.insert(0, before)
+
+    spike = np.isin(_phase(index, dt, period_s, n_bins), spike_bins)
+    # Linear interpolation from the neighbouring good samples. For an isolated
+    # sample this is the mean of the two samples either side.
+    clean = values.copy()
+    clean[spike] = np.interp(index[spike], index[~spike], values[~spike])
+
+    info(
+        f"removed {spike.sum()} spikes of {1e3 * composite[peak_bin]:.2f}mK "
+        f"at {period_s:.0f}s period (snr {snr:.0f}, "
+        f"{len(spike_bins)} sample(s) per cycle)"
+    )
+
+    solo.data = clean
+    solo.attrs["despiking applied"] = 1
+    solo.attrs["spikes removed"] = int(spike.sum())
+
+    return solo
