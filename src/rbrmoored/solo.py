@@ -360,10 +360,16 @@ def plot(solo, figure_out=None, cal_time=None):
         DataArray with thermistor data
     figure_out : path object, optional
         Path to figure output directory. Default None.
-    cal_time : np.datetime64 or tuple
+    cal_time : np.datetime64 or tuple, optional
         Clock calibration(s) from warm water dip, either a single np.datetime64
         time or a tuple of two time stamps with pre- and post-deployment clock
-        calibration.
+        calibration. Default None.
+
+    Raises
+    ------
+    TypeError
+        If `cal_time` is neither None, a single np.datetime64, nor a tuple of
+        two np.datetime64.
     """
 
     # Generate a list of one or two time stamps and check format of time
@@ -371,54 +377,51 @@ def plot(solo, figure_out=None, cal_time=None):
     def time_ok(time):
         return isinstance(time, np.datetime64)
 
+    cal = []
     if cal_time is not None:
         if time_ok(cal_time):
             cal = [cal_time]
-        elif isinstance(cal_time, tuple):
-            if time_ok(cal_time[0]) and time_ok(cal_time[1]):
-                cal = [cal_time[0], cal_time[1]]
+        elif (
+            isinstance(cal_time, tuple)
+            and len(cal_time) == 2
+            and all(time_ok(ti) for ti in cal_time)
+        ):
+            cal = list(cal_time)
         else:
             raise TypeError(
-                "Provide cal time(s) as single np.datetime64 or tuple thereof"
+                "Provide cal time(s) as a single np.datetime64 or a tuple of two"
             )
+    ncal = len(cal)
+    show_cal = ncal > 0
 
     # Check if calibration time(s) are outside the time series.
-    if cal_time is not None:
-        for time in cal:
-            if solo.time[-1] < time:
-                print(f"clock cal time {time} is past end of time series")
-            if solo.time[0] > time:
-                print(f"clock cal time {time} is before start of time series")
-
-    # Register how many cals to show.
-    if cal_time is None:
-        ncal = 0
-        show_cal = False
-    else:
-        ncal = len(cal)
-        show_cal = True
+    for time in cal:
+        if solo.time[-1] < time:
+            print(f"clock cal time {time} is past end of time series")
+        if solo.time[0] > time:
+            print(f"clock cal time {time} is before start of time series")
 
     # Set up figure.
-    if show_cal:
-        if ncal == 1:
-            fig, [ax0, axcal] = plt.subplots(
-                nrows=2, ncols=1, figsize=(10, 7), constrained_layout=True
-            )
-            axcal = [axcal]
-        elif ncal == 2:
-            fig = plt.figure(
-                constrained_layout=True,
-                figsize=(10, 7),
-            )
-            gs = fig.add_gridspec(2, 2)
-            ax0 = fig.add_subplot(gs[0, :])
-            ax1 = fig.add_subplot(gs[1, 0])
-            ax2 = fig.add_subplot(gs[1, 1])
-            axcal = [ax1, ax2]
+    if ncal == 1:
+        fig, [ax0, axcal_single] = plt.subplots(
+            nrows=2, ncols=1, figsize=(10, 7), constrained_layout=True
+        )
+        axcal = [axcal_single]
+    elif ncal == 2:
+        fig = plt.figure(
+            constrained_layout=True,
+            figsize=(10, 7),
+        )
+        gs = fig.add_gridspec(2, 2)
+        ax0 = fig.add_subplot(gs[0, :])
+        ax1 = fig.add_subplot(gs[1, 0])
+        ax2 = fig.add_subplot(gs[1, 1])
+        axcal = [ax1, ax2]
     else:
         fig, ax0 = plt.subplots(
             nrows=1, ncols=1, figsize=(10, 4), constrained_layout=True
         )
+        axcal = []
 
     # Plot time series. Coarsen if it is too long to slow things down.
     if len(solo) > 1e5:
@@ -473,11 +476,11 @@ def plot(solo, figure_out=None, cal_time=None):
 
     # Plot calibration.
     if show_cal:
-        for cal_time, axi in zip(cal, axcal):
+        for cali, axi in zip(cal, axcal):
             tmp = solo.sel(
                 time=slice(
-                    cal_time - np.timedelta64(60, "s"),
-                    cal_time + np.timedelta64(60, "s"),
+                    cali - np.timedelta64(60, "s"),
+                    cali + np.timedelta64(60, "s"),
                 )
             )
             if len(tmp) > 0:
@@ -486,7 +489,7 @@ def plot(solo, figure_out=None, cal_time=None):
             else:
                 ylims = np.array([1, 9])
             axi.plot(
-                np.tile(cal_time, 2),
+                np.tile(cali, 2),
                 ylims + np.array([1, -1]),
                 linestyle="-",
                 color="darkorchid",
@@ -494,7 +497,7 @@ def plot(solo, figure_out=None, cal_time=None):
             )
             axi.annotate(
                 "time calibration",
-                (cal_time, ylims[0] + 0.5),
+                (cali, ylims[0] + 0.5),
                 xytext=(16, 8),
                 textcoords="offset points",
                 color="darkorchid",
@@ -503,8 +506,8 @@ def plot(solo, figure_out=None, cal_time=None):
             )
             axi.set(
                 xlim=[
-                    cal_time - np.timedelta64(20, "s"),
-                    cal_time + np.timedelta64(20, "s"),
+                    cali - np.timedelta64(20, "s"),
+                    cali + np.timedelta64(20, "s"),
                 ],
                 ylim=ylims,
                 xlabel="",
@@ -514,7 +517,7 @@ def plot(solo, figure_out=None, cal_time=None):
         if ncal == 2:
             axcal[-1].set(ylabel="")
 
-    if figure_out is not None or False:
+    if figure_out is not None:
         figurename = "{:s}.png".format(solo.attrs["file"][:-4])
         plt.savefig(figure_out.joinpath(figurename), dpi=300)
 
