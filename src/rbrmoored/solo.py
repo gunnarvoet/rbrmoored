@@ -75,11 +75,7 @@ def proc(
     if data_out:
         savepath = data_out.joinpath(filename)
         if savepath.exists():
-            print(
-                "already processed\nreading netcdf file from\n{}".format(
-                    savepath
-                )
-            )
+            print("already processed\nreading netcdf file from\n{}".format(savepath))
             solo = xr.open_dataarray(savepath)
             # Update time file stamp. This way, make still recognizes that
             # the file has been worked on.
@@ -87,14 +83,16 @@ def proc(
             savenc = False
             # For backwards compatibility, change name of sampling period attr
             if "sampling period" in solo.attrs:
-                solo.attrs["sampling period in s"] = solo.attrs[
-                    "sampling period"
-                ]
+                solo.attrs["sampling period in s"] = solo.attrs["sampling period"]
             else:
                 pass
         else:
             print("reading raw rsk file")
-            solo = read(solofile, offset_to_utc=offset_to_utc, offset_time_drift=offset_time_drift)
+            solo = read(
+                solofile,
+                offset_to_utc=offset_to_utc,
+                offset_time_drift=offset_time_drift,
+            )
             savenc = True
     else:
         print("reading raw rsk file")
@@ -109,9 +107,7 @@ def proc(
     if apply_time_offset:
         if solo.attrs["time drift in ms"] == 0:
             print("no time offset applied!")
-        elif (
-            np.absolute(solo.attrs["time drift in ms"]) > max_time_drift * 3.6e6
-        ):
+        elif np.absolute(solo.attrs["time drift in ms"]) > max_time_drift * 3.6e6:
             print(f"time offset more than {max_time_drift} hours, not applied")
         else:
             solo = time_offset(solo)
@@ -197,16 +193,16 @@ def read(solofile, offset_to_utc=0, offset_time_drift=0):
     solo.attrs["pyrsktools version"] = pyrsktools.__version__
     solo.attrs["rbrmoored version"] = rbr.__version__
     solo.attrs["file"] = file.name
-    solo.attrs["time drift in ms"] = rsk.deployment.loggerTimeDrift + (offset_time_drift * 3600 * 1e3)
+    solo.attrs["time drift in ms"] = rsk.deployment.loggerTimeDrift + (
+        offset_time_drift * 3600 * 1e3
+    )
     download_time = rsk.deployment.timeOfDownload
     if download_time > solo.time[-1]:
         solo.attrs["download time"] = f"{download_time}"
     else:
         solo.attrs["download time"] = "N/A"
     sample_size = rsk.deployment.sampleSize
-    solo.attrs["sample size"] = (
-        sample_size if sample_size is not None else "N/A"
-    )
+    solo.attrs["sample size"] = sample_size if sample_size is not None else "N/A"
     solo.attrs["sampling period in s"] = sampling_period
     # solo.attrs["path"] = os.path.dirname(solofile)
     solo.attrs["time offset applied"] = 0
@@ -247,7 +243,9 @@ def time_offset(solo, time_drift=None):
     if time_drift is None:
         time_drift = solo.attrs["time drift in ms"]
     else:
-        print(f"Replacing time drift of {solo.attrs['time drift in ms']}ms in attributes with {time_drift}ms")
+        print(
+            f"Replacing time drift of {solo.attrs['time drift in ms']}ms in attributes with {time_drift}ms"
+        )
         solo.attrs["time drift in ms"] = time_drift
     print(f"Applying time offset of {time_drift}ms")
 
@@ -273,7 +271,7 @@ def time_offset(solo, time_drift=None):
 
     # Cast the entire array to integer and then to timedelta64[ns]
     # This replaces the slow list comprehension
-    time_delta_vector = drift_ns.round().astype('timedelta64[ns]')
+    time_delta_vector = drift_ns.round().astype("timedelta64[ns]")
 
     # 4. Apply to coordinates
     # Using .assign_coords is often cleaner/faster in xarray than direct assignment
@@ -315,23 +313,17 @@ def time_offset_slow(solo, time_drift=None):
         if time_drift is None:
             time_drift = solo.attrs["time drift in ms"]
         else:
-            print(f"Replacing time drift of {solo.attrs['time drift in ms']}ms in attributes with {time_drift}ms")
-            solo.attrs["time drift in ms"] = time_drift
-        print(
-            "applying time offset of {}ms".format(
-                solo.attrs["time drift in ms"]
+            print(
+                f"Replacing time drift of {solo.attrs['time drift in ms']}ms in attributes with {time_drift}ms"
             )
-        )
+            solo.attrs["time drift in ms"] = time_drift
+        print("applying time offset of {}ms".format(solo.attrs["time drift in ms"]))
         # generate linear time drift vector
-        old_time = solo.time.copy()
-        time_offset_linspace = np.linspace(
-            0, time_drift, solo.attrs["sample size"]
-        )
+        time_offset_linspace = np.linspace(0, time_drift, solo.attrs["sample size"])
         # convert to numpy timedelta64
         # this format can't handle non-integers, so we switch to nanoseconds
         time_offset = [
-            np.timedelta64(int(np.round(ti * 1e6)), "ns")
-            for ti in time_offset_linspace
+            np.timedelta64(int(np.round(ti * 1e6)), "ns") for ti in time_offset_linspace
         ]
         new_time = solo.time - time_offset
         solo["time"] = new_time
@@ -373,15 +365,16 @@ def plot(solo, figure_out=None, cal_time=None):
         time or a tuple of two time stamps with pre- and post-deployment clock
         calibration.
     """
+
     # Generate a list of one or two time stamps and check format of time
     # stamp(s) provided.
     def time_ok(time):
-        return True if type(time) == np.datetime64 else False
+        return isinstance(time, np.datetime64)
 
     if cal_time is not None:
         if time_ok(cal_time):
             cal = [cal_time]
-        elif type(cal_time) == tuple:
+        elif isinstance(cal_time, tuple):
             if time_ok(cal_time[0]) and time_ok(cal_time[1]):
                 cal = [cal_time[0], cal_time[1]]
         else:
@@ -489,9 +482,7 @@ def plot(solo, figure_out=None, cal_time=None):
             )
             if len(tmp) > 0:
                 tmp.plot(ax=axi, marker=".")
-                ylims = np.array(
-                    [np.floor(tmp.min().data), np.ceil(tmp.max().data)]
-                )
+                ylims = np.array([np.floor(tmp.min().data), np.ceil(tmp.max().data)])
             else:
                 ylims = np.array([1, 9])
             axi.plot(
