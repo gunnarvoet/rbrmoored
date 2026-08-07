@@ -23,28 +23,25 @@ classifiers = [
 requires-python = ">= 3.10"
 dependencies = [
     "numpy>=2.0.0",
+    "scipy",
+    "matplotlib",
     "xarray",
     "netcdf4>=1.7.0",
     "pyrsktools>=1.1.2",
 ]
 
-# with the following we force pyrsktools to work with numpy>=2
-# [tool.uv]
-# override-dependencies = [
-#     "numpy>=2.0.0"
-# ]
-
 [tool.uv.sources]
 # Resolve from the numpy>=2 fork so rbrmoored installs cleanly from git.
-# For local editable work: uv pip install -e ../pyrsktools --no-deps
+# For local editable work on pyrsktools use `make dev-pyrsktools` (see Makefile);
+# note that a plain `uv run` re-syncs and undoes the editable install.
 pyrsktools = { git = "https://github.com/gunnarvoet/pyrsktools", branch = "gunnar_main" }
 
 
 [project.urls]
-Documentation = "https://gunnarvoet.net/sbemoored/rbrmoored.html"
+Documentation = "https://gunnarvoet.net/rbrmoored/rbrmoored.html"
 Repository = "https://github.com/gunnarvoet/rbrmoored.git"
 Issues = "https://github.com/gunnarvoet/rbrmoored/issues"
-Changelog = "https://github.com/gunnarvoet/sbemoored/blob/main/HISTORY.md"
+Changelog = "https://github.com/gunnarvoet/rbrmoored/blob/main/HISTORY.md"
 
 [tool.pytest.ini_options]
 # in general, do not place a `__init__.py` in your tests
