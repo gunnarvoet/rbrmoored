@@ -61,7 +61,7 @@ filterwarnings = [
     ]
 log_cli_level = "info"
 testpaths = [
-    "src/rbrmoored/tests/",
+    "tests",
     ]
 
 [dependency-groups]
