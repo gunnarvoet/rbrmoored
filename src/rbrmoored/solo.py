@@ -27,6 +27,7 @@ def proc(
     max_time_drift=4.0,
     offset_to_utc=0,
     offset_time_drift=0,
+    spike_removal_kwargs=None,
 ):
     """Combine RBR Solo processing steps.
 
@@ -63,6 +64,9 @@ def proc(
         Correct the time offset between sensor and download computer (in
         hours). This is helpful when the download computer has not been set to
         UTC time. Default no offset.
+    spike_removal_kwargs : dict, optional
+        Keyword arguments passed on to `spike_removal`, for example
+        `{"method": "subtract"}`. Default None.
 
     Returns
     -------
@@ -101,7 +105,7 @@ def proc(
 
     # spike removal
     if apply_spike_removal:
-        solo = spike_removal(solo)
+        solo = spike_removal(solo, **(spike_removal_kwargs or {}))
 
     # apply time drift
     if apply_time_offset:
@@ -591,6 +595,81 @@ def _fold(deviation, index, dt, period_s, n_bins, trim_fraction):
     return composite - np.median(composite)
 
 
+def _trimmed_mean(a, trim_fraction):
+    """Trimmed mean along the last axis."""
+    a = np.sort(a, axis=-1)
+    trim = int(trim_fraction * a.shape[-1])
+    return a[..., trim : a.shape[-1] - trim].mean(axis=-1)
+
+
+def _subtract_template(
+    values, index, spike_pos, n_tail, block_samples, trim_fraction, min_cycles
+):
+    """Subtract a periodic spike of fixed shape, estimated block by block.
+
+    The excess of the spike sample and of `n_tail` samples after it over the
+    straight line through the two flanking samples is averaged over the cycles
+    of a block (trimmed mean) and subtracted from those samples. Blocks with
+    fewer than `min_cycles` cycles use the record-wide template. Spike samples
+    without contiguous flanking samples (at a gap or at either end of the
+    record) are left unchanged.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        The record.
+    index : numpy.ndarray
+        Sample index within the record.
+    spike_pos : numpy.ndarray
+        Positions of the spike samples in `values`.
+    n_tail : int
+        Number of samples after the spike sample that belong to the artifact.
+    block_samples : int
+        Block length in samples. One block for the whole record if zero.
+    trim_fraction : float
+        Fraction of cycles trimmed off either end.
+    min_cycles : int
+        Minimum number of cycles for a block to get its own template.
+
+    Returns
+    -------
+    clean : numpy.ndarray
+        The record with the spike subtracted.
+    template : numpy.ndarray
+        Record-wide template, length `n_tail + 1`.
+    n_skipped : int
+        Number of spike samples left unchanged.
+    """
+    span = n_tail + 2
+    pos = spike_pos[(spike_pos >= 1) & (spike_pos + n_tail + 1 < values.size)]
+    pos = pos[index[pos + n_tail + 1] - index[pos - 1] == span]
+    n_skipped = spike_pos.size - pos.size
+    clean = values.copy()
+    if pos.size == 0:
+        return clean, np.zeros(n_tail + 1), n_skipped
+    left, right = values[pos - 1], values[pos + n_tail + 1]
+    excess = np.stack(
+        [
+            values[pos + j] - (left + (j + 1) / span * (right - left))
+            for j in range(n_tail + 1)
+        ]
+    )
+    template = _trimmed_mean(excess, trim_fraction)
+    if block_samples:
+        block = index[pos] // block_samples
+    else:
+        block = np.zeros(pos.size, np.int64)
+    edges = np.flatnonzero(np.diff(block)) + 1
+    for sel in np.split(np.arange(pos.size), edges):
+        if sel.size >= min_cycles:
+            local = _trimmed_mean(excess[:, sel], trim_fraction)
+        else:
+            local = template
+        for j in range(n_tail + 1):
+            clean[pos[sel] + j] -= local[j]
+    return clean, template, n_skipped
+
+
 def spike_removal(
     solo,
     period_s=60.0,
@@ -600,6 +679,10 @@ def spike_removal(
     min_cycles=30,
     trim_fraction=0.1,
     verbose=True,
+    method="interpolate",
+    n_tail=2,
+    block_s=172800.0,
+    models=("RBRsolo³",),
 ):
     """Remove the periodic spike in RBRsolo³ time series.
 
@@ -624,8 +707,23 @@ def spike_removal(
     loggers that do not show the artifact - detecting spikes relative to a local
     noise estimate alone would always find *something* and remove good data.
 
-    Records that are not RBRsolo³, that have already been despiked, or that are
-    shorter than `min_cycles` spike periods are returned unchanged.
+    With `method="subtract"` the spike is subtracted instead. The artifact has
+    the same size every cycle: in 73 RBRsolo³ loggers sampling at 2 s for 13
+    months the scatter of the spike sample about its neighbours was 0.95 to
+    1.07 times that of any other sample, and the amplitude (+1.13 to +1.58 mK
+    between loggers) changed by less than 0.01 mK between two-day blocks. The
+    sample after the spike is high by about 2 % of the spike and the one after
+    that by about 0.3 %. So the mean
+    excess of the spike sample and of `n_tail` samples after it over the
+    straight line through the two flanking samples is formed per block of
+    `block_s` seconds and subtracted, which keeps the measurement in those
+    samples. The amplitude depends weakly on temperature (at 24 to 35 °C between
+    14 % smaller and 4 % larger than at 1.4 °C, median 4 % smaller), which the
+    blocks follow.
+
+    Records of a model not listed in `models`, records that have already been
+    despiked, and records shorter than `min_cycles` spike periods are returned
+    unchanged.
 
     Note that the spike is locked to the logger clock, so this should be run
     before the clock drift correction in `time_offset`. `proc` does that.
@@ -653,23 +751,45 @@ def spike_removal(
         Keeps deck and lab time from dominating the fold. Default 0.1.
     verbose : bool, optional
         Print what was found and done. Default True.
+    method : {"interpolate", "subtract"}, optional
+        Replace the spike samples by linear interpolation (default), or subtract
+        the spike from them.
+    n_tail : int, optional
+        Number of samples after the spike sample that are part of the artifact.
+        Only used with `method="subtract"`. Default 2.
+    block_s : float or None, optional
+        Length in seconds of the blocks the spike is estimated over. One
+        estimate for the whole record if None. Only used with
+        `method="subtract"`. Default 172800 (two days).
+    models : tuple of str or None, optional
+        Instrument models, as in the attribute `model`, the removal is applied
+        to. Any model if None. Default `("RBRsolo³",)`.
 
     Returns
     -------
     solo : xarray.DataArray
         DataArray with thermistor data. The following attributes document the
-        result: `despiking applied`, `spike period in s`, `spike phase in s`
-        (position of the spike within the cycle, counted from the whole minute),
-        `spike amplitude in K`, `spike detection snr` and `spikes removed`.
+        result: `despiking applied`, `spike removal method`, `spike period in
+        s`, `spike phase in s` (position of the spike within the cycle, counted
+        from the whole minute), `spike amplitude in K`, `spike detection snr`
+        and `spikes removed`. With `method="subtract"` also `spike template in
+        K` (the record-wide excess of the spike sample and its tail) and `spikes
+        not removed` (spike samples at a gap or at the ends of the record).
     """
 
     def info(message):
         if verbose:
             print(message)
 
-    # Only apply to the RBRsolo³ version, not older units.
-    if solo.attrs.get("model", "") != "RBRsolo³":
+    # By default only applied to the RBRsolo³ version, not older units. A bare
+    # string would match by substring ("RBRsolo" in "RBRsolo³").
+    if isinstance(models, str):
+        models = (models,)
+    if models is not None and solo.attrs.get("model", "") not in models:
         return solo
+
+    if method not in ("interpolate", "subtract"):
+        raise ValueError(f"method must be 'interpolate' or 'subtract', got '{method}'")
 
     if bool(solo.attrs.get("despiking applied", 0)):
         info("despiking has already been applied")
@@ -738,6 +858,25 @@ def spike_removal(
         solo.attrs["spikes removed"] = 0
         return solo
 
+    if method == "subtract":
+        spike_pos = np.flatnonzero(_phase(index, dt, period_s, n_bins) == peak_bin)
+        block_samples = round(block_s / dt) if block_s else 0
+        clean, template, n_skipped = _subtract_template(
+            values, index, spike_pos, n_tail, block_samples, trim_fraction, min_cycles
+        )
+        info(
+            f"subtracted a spike of {1e3 * template[0]:.3f}mK at {period_s:.0f}s "
+            f"period from {spike_pos.size - n_skipped} samples (snr {snr:.0f}, "
+            f"{n_skipped} left alone)"
+        )
+        solo.data = clean
+        solo.attrs["despiking applied"] = 1
+        solo.attrs["spike removal method"] = "subtract"
+        solo.attrs["spike template in K"] = template
+        solo.attrs["spikes removed"] = int(spike_pos.size - n_skipped)
+        solo.attrs["spikes not removed"] = int(n_skipped)
+        return solo
+
     # Scatter between neighbouring bins of the on-period fold. Now that the
     # spike is established this is the right scale for delineating its width.
     # Bins within half a median window of the peak are excluded: the spike sits
@@ -786,6 +925,7 @@ def spike_removal(
 
     solo.data = clean
     solo.attrs["despiking applied"] = 1
+    solo.attrs["spike removal method"] = "interpolate"
     solo.attrs["spikes removed"] = int(spike.sum())
 
     return solo

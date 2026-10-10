@@ -25,6 +25,24 @@
 - `solo.spike_removal` documents what it found in the attributes `spike period
   in s`, `spike phase in s`, `spike amplitude in K`, `spike detection snr` and
   `spikes removed`.
+- `solo.spike_removal(method="subtract")` subtracts the periodic spike instead
+  of interpolating over it, so the spike samples keep their measurement. The
+  spike and `n_tail` samples after it are estimated per block of `block_s`
+  seconds as the mean excess over the line through the flanking samples. In 73
+  RBRsolo³ loggers sampling at 2 s for 13 months the spike measured +1.13 to
+  +1.58 mK, its scatter was 0.95 to 1.07 times that of any other sample, and
+  the two samples after it were high by about 0.030 and 0.004 mK. After
+  subtraction with the default `n_tail=2` the residual at the spike sample and
+  the one after it was below 0.001 mK in three loggers checked. The default
+  method stays `"interpolate"`.
+- `solo.spike_removal(models=...)` selects the instrument models the removal is
+  applied to (`None` for any), and `period_s` together with `models=None`
+  handles other periodic single-sample artifacts, such as the spike every 32
+  samples seen in four of 24 older RBRsolo loggers.
+- `solo.proc(spike_removal_kwargs=...)` passes keyword arguments on to
+  `solo.spike_removal`.
+- `solo.spike_removal` records the attribute `spike removal method`, and with
+  `method="subtract"` also `spike template in K` and `spikes not removed`.
 
 ### Bug fixes
 
