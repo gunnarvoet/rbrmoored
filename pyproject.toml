@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "rbrmoored"
-version = "2026.03"
+version = "2026.10"
 authors = [
     {name = "Gunnar Voet", email = "gvoet@ucsd.edu"},
     ]

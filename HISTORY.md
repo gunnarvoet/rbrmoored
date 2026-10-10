@@ -12,13 +12,17 @@
 
 <!-- ### Internal Changes -->
 
-## (unreleased)
+## v2026.10
 
 ### Breaking changes
 
 - `solo.spike_removal` now detects the periodic RBRsolo³ spike before removing
   anything and leaves records without a detectable spike untouched. Records
   processed with the previous version should be re-processed.
+- `solo.spike_removal` subtracts the periodic spike by default
+  (`method="subtract"`). Before, it replaced the spike samples by linear
+  interpolation, which is still available as `method="interpolate"`. `solo.proc`
+  follows the new default unless `spike_removal_kwargs` says otherwise.
 
 ### New Features
 
@@ -33,8 +37,7 @@
   +1.58 mK, its scatter was 0.95 to 1.07 times that of any other sample, and
   the two samples after it were high by about 0.030 and 0.004 mK. After
   subtraction with the default `n_tail=2` the residual at the spike sample and
-  the one after it was below 0.001 mK in three loggers checked. The default
-  method stays `"interpolate"`.
+  the one after it was below 0.001 mK in three loggers checked.
 - `solo.spike_removal(models=...)` selects the instrument models the removal is
   applied to (`None` for any), and `period_s` together with `models=None`
   handles other periodic single-sample artifacts, such as the spike every 32
