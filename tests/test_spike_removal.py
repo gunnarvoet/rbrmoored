@@ -77,14 +77,14 @@ def changed_index(before, after):
 @pytest.mark.parametrize("dt", [0.5, 1.0, 2.0])
 def test_spike_removal_removes_one_sample_per_cycle(dt):
     solo, spike_index = make_record(dt, spike_amplitude=1.3e-3)
-    clean = rbr.solo.spike_removal(solo)
+    clean = rbr.solo.spike_removal(solo, method="interpolate")
     assert changed_index(solo, clean).size == spike_index.size
 
 
 @pytest.mark.parametrize("dt", [0.5, 1.0, 2.0])
 def test_spike_removal_targets_the_spiked_samples(dt):
     solo, spike_index = make_record(dt, spike_amplitude=1.3e-3)
-    clean = rbr.solo.spike_removal(solo)
+    clean = rbr.solo.spike_removal(solo, method="interpolate")
     np.testing.assert_array_equal(changed_index(solo, clean), spike_index)
 
 
@@ -257,6 +257,12 @@ def test_models_none_applies_to_an_older_solo_with_another_period():
     )
     inner = index[(index > 1) & (index < n - 2)]
     assert np.abs(clean.data[inner] - plain[inner]).max() < 5e-5
+
+
+def test_default_method_is_subtract():
+    solo, _ = make_record(0.5, spike_amplitude=1.3e-3)
+    clean = rbr.solo.spike_removal(solo, verbose=False)
+    assert clean.attrs["spike removal method"] == "subtract"
 
 
 def test_unknown_method_raises():

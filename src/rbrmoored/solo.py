@@ -66,7 +66,7 @@ def proc(
         UTC time. Default no offset.
     spike_removal_kwargs : dict, optional
         Keyword arguments passed on to `spike_removal`, for example
-        `{"method": "subtract"}`. Default None.
+        `{"method": "interpolate"}`. Default None.
 
     Returns
     -------
@@ -679,7 +679,7 @@ def spike_removal(
     min_cycles=30,
     trim_fraction=0.1,
     verbose=True,
-    method="interpolate",
+    method="subtract",
     n_tail=2,
     block_s=172800.0,
     models=("RBRsolo³",),
@@ -699,15 +699,16 @@ def spike_removal(
     above the rest. Whether it does is decided by folding the same record at
     slightly detuned periods, which is what the fold looks like when there is
     nothing periodic to find. Only samples falling into the spike bin (and, if
-    the spike is wider than one sample, into the adjacent bins) are replaced, by
-    linear interpolation from the neighbouring samples.
+    the spike is wider than one sample, into the adjacent bins) are changed. With
+    `method="interpolate"` they are replaced by linear interpolation from the
+    neighbouring samples.
 
     If no significant spike is found the record is returned unchanged and the
     attribute `despiking applied` is set to 0. This is the expected outcome for
     loggers that do not show the artifact - detecting spikes relative to a local
     noise estimate alone would always find *something* and remove good data.
 
-    With `method="subtract"` the spike is subtracted instead. The artifact has
+    With `method="subtract"`, the default, the spike is subtracted instead. The artifact has
     the same size every cycle: in 73 RBRsolo³ loggers sampling at 2 s for 13
     months the scatter of the spike sample about its neighbours was 0.95 to
     1.07 times that of any other sample, and the amplitude (+1.13 to +1.58 mK
@@ -751,9 +752,9 @@ def spike_removal(
         Keeps deck and lab time from dominating the fold. Default 0.1.
     verbose : bool, optional
         Print what was found and done. Default True.
-    method : {"interpolate", "subtract"}, optional
-        Replace the spike samples by linear interpolation (default), or subtract
-        the spike from them.
+    method : {"subtract", "interpolate"}, optional
+        Subtract the spike from the spike samples (default), or replace them by
+        linear interpolation.
     n_tail : int, optional
         Number of samples after the spike sample that are part of the artifact.
         Only used with `method="subtract"`. Default 2.
