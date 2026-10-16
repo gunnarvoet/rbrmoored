@@ -352,7 +352,7 @@ def save_nc(solo, data_out):
     solo.to_netcdf(savepath)
 
 
-def plot(solo, figure_out=None, cal_time=None):
+def plot(solo, figure_out=None, cal_time=None, offset_decimals=3):
     """Plot RBR Solo time series.
 
     Plots additional panels with clock calibration if calibration time(s) are
@@ -368,6 +368,15 @@ def plot(solo, figure_out=None, cal_time=None):
         Clock calibration(s) from warm water dip, either a single np.datetime64
         time or a tuple of two time stamps with pre- and post-deployment clock
         calibration. Default None.
+    offset_decimals : int, optional
+        Number of decimals of the applied time offset [s] printed on the plot.
+        The default of 3 shows the full millisecond resolution of the time
+        drift attribute. Default 3.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure.
 
     Raises
     ------
@@ -439,8 +448,8 @@ def plot(solo, figure_out=None, cal_time=None):
         ax0.text(
             0.05,
             0.9,
-            "time offset of {} seconds applied".format(
-                solo.attrs["time drift in ms"] / 1000
+            "time offset of {:.{}f} seconds applied".format(
+                solo.attrs["time drift in ms"] / 1000, offset_decimals
             ),
             transform=ax0.transAxes,
             backgroundcolor="w",
@@ -524,6 +533,8 @@ def plot(solo, figure_out=None, cal_time=None):
     if figure_out is not None:
         figurename = "{:s}.png".format(solo.attrs["file"][:-4])
         plt.savefig(figure_out.joinpath(figurename), dpi=300)
+
+    return fig
 
 
 def _phase(index, dt, period_s, n_bins):

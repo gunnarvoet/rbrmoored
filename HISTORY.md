@@ -1,10 +1,15 @@
 # History
 
-<!-- ## (unreleased) -->
+## (unreleased)
 
 <!-- ### Breaking changes -->
 
-<!-- ### New Features -->
+### New Features
+
+- `solo.plot` takes `offset_decimals` to set the number of decimals of the
+  applied time offset printed on the plot. The default of 3 shows the full
+  millisecond resolution, now always printed with three decimals.
+- `solo.plot` returns the figure.
 
 <!-- ### Bug fixes -->
 

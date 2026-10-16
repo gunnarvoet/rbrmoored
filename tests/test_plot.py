@@ -77,3 +77,25 @@ def test_plot_does_not_clobber_cal_time_argument(solo):
 def test_plot_rejects_bad_cal_time(solo, cal_time):
     with pytest.raises(TypeError):
         rbr.solo.plot(solo, cal_time=cal_time)
+
+
+def test_plot_returns_figure(solo):
+    fig = rbr.solo.plot(solo)
+    assert fig is plt.gcf()
+
+
+@pytest.mark.parametrize(
+    "drift_ms, offset_decimals, expected",
+    [
+        (-47998.0, 3, "time offset of -47.998 seconds applied"),
+        (-48000.0, 3, "time offset of -48.000 seconds applied"),
+        (-47998.0, 0, "time offset of -48 seconds applied"),
+        (1234.0, 1, "time offset of 1.2 seconds applied"),
+    ],
+)
+def test_plot_offset_label(solo, drift_ms, offset_decimals, expected):
+    solo.attrs["time drift in ms"] = drift_ms
+    solo.attrs["time offset applied"] = 1
+    fig = rbr.solo.plot(solo, offset_decimals=offset_decimals)
+    labels = [t.get_text() for t in fig.axes[0].texts]
+    assert expected in labels
